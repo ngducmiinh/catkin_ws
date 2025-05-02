@@ -4,6 +4,7 @@
   <arg name="arduino_baud" default="57600" />
   <arg name="lidar_port" default="/dev/ttyUSB0" />
   <arg name="slam_methods" default="gmapping" doc="slam type [gmapping, hector]"/>
+  <arg name="use_rviz" default="false" doc="set to true to enable RViz"/>
   
   <!-- Start the actual robot hardware -->
   <include file="$(find custom_robot)/launch/robot_bringup.launch">
@@ -16,5 +17,6 @@
   <!-- Start SLAM -->
   <include file="$(find custom_robot)/launch/custom_slam.launch">
     <arg name="slam_methods" value="$(arg slam_methods)"/>
+    <arg name="use_rviz" value="$(arg use_rviz)"/>
   </include>
 </launch>
