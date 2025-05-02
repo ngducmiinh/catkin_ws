@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import rospy
 import tf
@@ -14,10 +14,10 @@ class OdomConverter:
         self.publish_tf = True
         
         # Publishers
-        self.odom_pub = rospy.Publisher('odom_converted', Odometry, queue_size=10)
+        self.odom_pub = rospy.Publisher('odom', Odometry, queue_size=10)
         
         # Subscribers
-        rospy.Subscriber('odom', Point, self.odom_callback)
+        rospy.Subscriber('odom_raw', Point, self.odom_callback)
         
         # TF Broadcaster
         self.tf_broadcaster = tf.TransformBroadcaster()
@@ -40,7 +40,7 @@ class OdomConverter:
         odom = Odometry()
         odom.header.stamp = current_time
         odom.header.frame_id = "odom"
-        odom.child_frame_id = "base_link"
+        odom.child_frame_id = "base_footprint"
         
         # Set position
         odom.pose.pose.position.x = x
@@ -62,9 +62,10 @@ class OdomConverter:
                 (x, y, 0),
                 quat,
                 current_time,
-                "base_link",
+                "base_footprint",
                 "odom"
             )
+            rospy.loginfo_once("Publishing TF: odom -> base_footprint")
 
 if __name__ == '__main__':
     try:

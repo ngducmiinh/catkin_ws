@@ -42,7 +42,7 @@ float right = 0;
 // --- ROS ---
 ros::NodeHandle nh;
 geometry_msgs::Point pose_msg;
-ros::Publisher pose_pub("odom", &pose_msg);
+ros::Publisher pose_pub("odom_raw", &pose_msg); // Đổi tên topic từ "odom" sang "odom_raw"
 
 
 void robot_control(const std_msgs::Float32MultiArray& msg) {
@@ -153,7 +153,7 @@ void count_l()
 
 void setup() {
   nh.initNode();
-  nh.advertise(pose_pub);
+  nh.advertise(pose_pub); // Đã sửa topic name sang odom_raw trong khai báo trên
   nh.subscribe(control_sub);  
   nh.advertise(arduino_node);
   // Cấu hình chân động cơ
