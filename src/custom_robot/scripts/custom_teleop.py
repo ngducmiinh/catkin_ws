@@ -21,12 +21,12 @@ CTRL-C to quit
 """
 
 # Tốc độ tối đa
-MAX_LINEAR = 200  # Điều chỉnh giá trị này phù hợp với robot của bạn
-MAX_ANGULAR = 100  # Điều chỉnh giá trị này phù hợp với robot của bạn
+MAX_LINEAR = 100  # Điều chỉnh giá trị này phù hợp với robot của bạn
+MAX_ANGULAR = 50  # Điều chỉnh giá trị này phù hợp với robot của bạn
 
 # Tốc độ giảm dần
-LIN_VEL_STEP_SIZE = 20
-ANG_VEL_STEP_SIZE = 10
+LIN_VEL_STEP_SIZE = 10
+ANG_VEL_STEP_SIZE = 5
 
 class CustomTeleop:
     def __init__(self):
