@@ -1,14 +1,42 @@
+# ROS specific ignores
 build/
 devel/
 .catkin_workspace
-*.pyc
+.catkin_tools/
+
+# Python ignores
+*.py[cod]
 __pycache__/
 *.so
-*.a
+.Python
+env/
+.env/
+venv/
+ENV/
+
+# C++ ignores
 *.o
-.vscode/
+*.so
+*.a
+*.la
+*.lai
+*.dylib
+
+# IDE ignores
 .idea/
-*.user
 *.swp
-logfiles/
-*.log
+*.swo
+.vscode/
+*.sublime-workspace
+
+# OS specific ignores
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Bag files (potentially large)
+*.bag
