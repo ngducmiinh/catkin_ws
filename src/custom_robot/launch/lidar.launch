@@ -1,10 +1,10 @@
 <launch>
   <arg name="port" default="/dev/ttyUSB0" />
-  <arg name="frame_id" default="laser_frame" />
+  <arg name="frame_id" default="base_scan" />
   <arg name="baudrate" default="115200" />
   
-  <!-- Run YDLidar X2 driver -->
-  <node name="ydlidar_node" pkg="ydlidar_ros_driver" type="ydlidar_ros_driver_node" output="screen" respawn="false">
+  <!-- Run YDLidar X2 driver - ĐỔI TÊN NODE THÀNH turtlebot3_lds ĐỂ TƯƠNG THÍCH -->
+  <node name="turtlebot3_lds" pkg="ydlidar_ros_driver" type="ydlidar_ros_driver_node" output="screen" respawn="false">
     <param name="port" value="$(arg port)"/>
     <param name="frame_id" value="$(arg frame_id)"/>
     <param name="ignore_array" value=""/>
@@ -35,7 +35,7 @@
     <param name="frequency" value="10.0"/>
   </node>
 
-  <!-- TF transformation for laser frame -->
+  <!-- TF transformation cho laser frame -->
   <node pkg="tf" type="static_transform_publisher" name="base_link_to_laser" 
     args="0.0 0.0 0.0 0.0 0.0 0.0 base_link $(arg frame_id) 50" />
 </launch>
