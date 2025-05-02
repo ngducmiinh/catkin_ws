@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="set_frame_id" default="base_scan"/>
+  <arg name="port" default="/dev/ttyUSB0"/>
+  
+  <!-- Include YDLidar X2 launch file with appropriate parameters -->
+  <include file="$(find ydlidar_ros_driver)/launch/X2.launch">
+    <arg name="port" value="$(arg port)"/>
+    <arg name="set_frame_id" value="$(arg set_frame_id)"/>
+  </include>
+</launch>

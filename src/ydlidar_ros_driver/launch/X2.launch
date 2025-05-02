@@ -1,9 +1,12 @@
 <launch>
-  <node name="ydlidar_lidar_publisher"  pkg="ydlidar_ros_driver"  type="ydlidar_ros_driver_node" output="screen" respawn="false" >
+  <arg name="port" default="/dev/ydlidar" />
+  <arg name="set_frame_id" default="base_scan" />
+
+  <node name="turtlebot3_lds"  pkg="ydlidar_ros_driver"  type="ydlidar_ros_driver_node" output="screen" respawn="false" >
     <!-- string property -->
-    <param name="port"         type="string" value="/dev/ydlidar"/>  
-    <param name="frame_id"     type="string" value="laser_frame"/>
-    <param name="ignore_array"     type="string" value=""/>
+    <param name="port"         type="string" value="$(arg port)"/>  
+    <param name="frame_id"     type="string" value="$(arg set_frame_id)"/>
+    <param name="ignore_array" type="string" value=""/>
 
     <!-- int property -->
     <param name="baudrate"         type="int" value="115200"/>  
@@ -33,6 +36,4 @@
     <!-- frequency is invalid, External PWM control speed -->
     <param name="frequency"    type="double" value="10.0"/>
   </node>
-  <node pkg="tf" type="static_transform_publisher" name="base_link_to_laser4"
-    args="0.0 0.0 0.2 0.0 0.0 0.0 /base_footprint /laser_frame 40" />
 </launch>
