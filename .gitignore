@@ -1,0 +1,14 @@
+build/
+devel/
+.catkin_workspace
+*.pyc
+__pycache__/
+*.so
+*.a
+*.o
+.vscode/
+.idea/
+*.user
+*.swp
+logfiles/
+*.log
