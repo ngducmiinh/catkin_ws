@@ -2,24 +2,27 @@
   <arg name="multi_robot_name" default=""/>
   <arg name="set_lidar_frame_id" default="base_scan"/>
   <arg name="model" default="$(env TURTLEBOT3_MODEL)" doc="model type [burger, waffle, waffle_pi]"/>
-  <arg name="lidar_type" default="$(env LIDAR_TYPE)" doc="lidar type [default, x2]"/>
-  <arg name="lidar_port" default="/dev/ttyUSB0" doc="port for lidar connection"/>
+  <arg name="use_x2_lidar" default="$(optenv USE_X2_LIDAR false)" doc="true: use X2 lidar, false: use default LDS"/>
+  <arg name="x2_port" default="/dev/ttyUSB0" doc="port for X2 lidar connection"/>
 
   <include file="$(find turtlebot3_bringup)/launch/turtlebot3_core.launch">
     <arg name="multi_robot_name" value="$(arg multi_robot_name)"/>
   </include>
 
-  <!-- Chọn loại lidar dựa trên tham số lidar_type -->
-  <group if="$(eval lidar_type == 'x2')">
-    <include file="$(find turtlebot3_bringup)/launch/includes/lidar_x2.launch.xml">
+  <!-- Chọn lidar dựa trên giá trị use_x2_lidar -->
+  <group if="$(eval use_x2_lidar == 'true')">
+    <include file="$(find ydlidar_ros_driver)/launch/X2.launch">
+      <arg name="port" value="$(arg x2_port)"/>
       <arg name="set_frame_id" value="$(arg set_lidar_frame_id)"/>
-      <arg name="port" value="$(arg lidar_port)"/>
     </include>
   </group>
   
-  <group unless="$(eval lidar_type == 'x2')">
+  <group unless="$(eval use_x2_lidar == 'true')">
+    <!-- Truyền trực tiếp LDS_MODEL vào turtlebot3_lidar.launch nếu USE_X2_LIDAR không bằng true -->
     <include file="$(find turtlebot3_bringup)/launch/turtlebot3_lidar.launch">
       <arg name="set_frame_id" value="$(arg set_lidar_frame_id)"/>
+      <!-- Mặc định cho LDS-01 nếu LDS_MODEL không được đặt -->
+      <arg name="lds_model" value="$(optenv LDS_MODEL LDS-01)"/>
     </include>
   </group>
 
