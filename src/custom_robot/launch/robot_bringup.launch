@@ -1,0 +1,30 @@
+<launch>
+  <!-- Serial port settings -->
+  <arg name="arduino_port" default="/dev/ttyACM0" />
+  <arg name="arduino_baud" default="57600" />
+  <arg name="lidar_port" default="/dev/ttyUSB0" />
+  
+  <!-- Load URDF mô tả robot -->
+  <include file="$(find custom_robot)/launch/robot_description.launch" />
+  
+  <!-- Launch the YDLidar X2 driver -->
+  <include file="$(find custom_robot)/launch/lidar.launch">
+    <arg name="port" value="$(arg lidar_port)" />
+  </include>
+  
+  <!-- Launch the Arduino Serial Node -->
+  <node name="arduino_node" pkg="rosserial_python" type="serial_node.py" output="screen">
+    <param name="port" value="$(arg arduino_port)" />
+    <param name="baud" value="$(arg arduino_baud)" />
+  </node>
+  
+  <!-- Odometry converter node -->
+  <node name="odom_converter" pkg="custom_robot" type="odom_converter.py" output="screen">
+  </node>
+
+  <!-- RViz for visualization (optional) -->
+  <arg name="rviz" default="false" />
+  <group if="$(arg rviz)">
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find turtlebot3_description)/rviz/burger.rviz" />
+  </group>
+</launch>

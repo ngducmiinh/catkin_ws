@@ -1,0 +1,25 @@
+<launch>
+  <!-- Turtlebot3 type - using burger model -->
+  <arg name="model" default="burger" />
+  
+  <!-- Kích thước và thông số thực tế của robot (có thể điều chỉnh) -->
+  <arg name="wheel_radius" default="0.03" doc="Bán kính bánh xe (m)" />
+  <arg name="wheel_base" default="0.1665" doc="Khoảng cách giữa hai bánh xe (m)" />
+
+  <!-- URDF mô tả robot -->
+  <param name="robot_description"
+         command="$(find xacro)/xacro --inorder $(find turtlebot3_description)/urdf/turtlebot3_$(arg model).urdf.xacro" />
+
+  <!-- Xuất bản trạng thái robot vào /joint_states -->
+  <node pkg="joint_state_publisher" type="joint_state_publisher" name="joint_state_publisher">
+    <param name="use_gui" value="false"/>
+    <param name="rate" value="20"/>
+  </node>
+  
+  <!-- Xuất bản trạng thái robot vào tf -->
+  <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" output="screen"/>
+  
+  <!-- TF tĩnh cho base_footprint -->
+  <node pkg="tf" type="static_transform_publisher" name="base_footprint_to_base" 
+        args="0 0 0 0 0 0 base_footprint base_link 100"/>
+</launch>

@@ -1,0 +1,41 @@
+<launch>
+  <arg name="port" default="/dev/ttyUSB0" />
+  <arg name="frame_id" default="laser_frame" />
+  <arg name="baudrate" default="115200" />
+  
+  <!-- Run YDLidar X2 driver -->
+  <node name="ydlidar_node" pkg="ydlidar_ros_driver" type="ydlidar_ros_driver_node" output="screen" respawn="false">
+    <param name="port" value="$(arg port)"/>
+    <param name="frame_id" value="$(arg frame_id)"/>
+    <param name="ignore_array" value=""/>
+    <param name="baudrate" value="$(arg baudrate)"/>
+    
+    <!-- Lidar params -->
+    <param name="lidar_type" value="1"/> <!-- 1 for TYPE_TRIANGLE -->
+    <param name="device_type" value="0"/> <!-- 0 for YDLIDAR_TYPE_SERIAL -->
+    <param name="sample_rate" value="3"/>
+    <param name="abnormal_check_count" value="4"/>
+    
+    <!-- Configuration -->
+    <param name="resolution_fixed" value="true"/>
+    <param name="auto_reconnect" value="true"/>
+    <param name="reversion" value="false"/>
+    <param name="inverted" value="true"/>
+    <param name="isSingleChannel" value="true"/>
+    <param name="intensity" value="false"/>
+    <param name="support_motor_dtr" value="true"/>
+    <param name="invalid_range_is_inf" value="false"/>
+    <param name="point_cloud_preservative" value="false"/>
+    
+    <!-- Scan range config -->
+    <param name="angle_min" value="-180"/>
+    <param name="angle_max" value="180"/>
+    <param name="range_min" value="0.1"/>
+    <param name="range_max" value="12.0"/>
+    <param name="frequency" value="10.0"/>
+  </node>
+
+  <!-- TF transformation for laser frame -->
+  <node pkg="tf" type="static_transform_publisher" name="base_link_to_laser" 
+    args="0.0 0.0 0.0 0.0 0.0 0.0 base_link $(arg frame_id) 50" />
+</launch>
