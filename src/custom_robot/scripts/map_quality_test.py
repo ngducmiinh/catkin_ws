@@ -149,6 +149,7 @@ class MapQualityTest:
     def visualize_results(self, results):
         if not results:
             return
+
         y0, y1 = results['roi_y']
         x0, x1 = results['roi_x']
         ref_roi = results['ref_map'][y0:y1, x0:x1]
@@ -159,29 +160,39 @@ class MapQualityTest:
             results['ref_entropy_map'][y0:y1, x0:x1] - results['test_entropy_map'][y0:y1, x0:x1]
         )
         ent_diff_roi[np.isnan(ent_diff_roi)] = 0
+
         overlay = np.zeros((*results['ref_map'].shape, 3))
         overlay[..., 0] = np.nan_to_num(results['ref_map'])
         overlay[..., 1] = np.nan_to_num(results['test_map'])
+        overlay_roi = overlay[y0:y1, x0:x1]
+
         fig, axes = plt.subplots(2, 3, figsize=(15, 10))
         ax_ref, ax_test, ax_diff = axes[0]
         ax_overlay, ax_sim, ax_ent = axes[1]
+
         im_ref = ax_ref.imshow(ref_roi, cmap='gray', vmin=0, vmax=1)
         ax_ref.set_title(f"Reference Map (Entropy: {results['ref_entropy']:.4f})")
         plt.colorbar(im_ref, ax=ax_ref)
+
         im_test = ax_test.imshow(test_roi, cmap='gray', vmin=0, vmax=1)
         ax_test.set_title(f"Test Map (Entropy: {results['test_entropy']:.4f})")
         plt.colorbar(im_test, ax=ax_test)
+
         im_diff = ax_diff.imshow(diff_roi, cmap='hot', vmin=0, vmax=1)
         ax_diff.set_title(f"Difference Map (MSE: {results['mse']:.4f})")
         plt.colorbar(im_diff, ax=ax_diff)
-        im_overlay = ax_overlay.imshow(overlay)
+
+        im_overlay = ax_overlay.imshow(overlay_roi)
         ax_overlay.set_title("Map Overlay (Red: Ref, Green: Test)")
+
         im_sim = ax_sim.imshow(sim_roi, cmap='viridis', vmin=0, vmax=1)
         ax_sim.set_title(f"Similarity Map (Score: {results['similarity']:.4f})")
         plt.colorbar(im_sim, ax=ax_sim)
+
         im_ent = ax_ent.imshow(ent_diff_roi, cmap='plasma')
         ax_ent.set_title("Entropy Difference")
         plt.colorbar(im_ent, ax=ax_ent)
+
         metrics_text = (
             f"MSE: {results['mse']:.4f}\n"
             f"Similarity: {results['similarity']:.4f}\n"
@@ -189,6 +200,7 @@ class MapQualityTest:
             f"Entropy Test: {results['test_entropy']:.4f}"
         )
         fig.text(0.5, 0.01, metrics_text, ha='center', fontsize=12, bbox=dict(facecolor='white', alpha=0.8))
+
         plt.tight_layout()
         save_path = os.path.join(self.save_dir, f"map_quality_{self.result_timestamp}.png")
         plt.savefig(save_path, dpi=300)
