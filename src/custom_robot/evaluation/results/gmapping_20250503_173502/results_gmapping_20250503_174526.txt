@@ -1,0 +1,29 @@
+==== ABSOLUTE TRAJECTORY ERROR (ATE) ====
+APE w.r.t. translation part (m)
+(with Sim(3) Umeyama alignment)
+
+       max	0.066828
+      mean	0.006453
+    median	0.005192
+       min	0.000085
+      rmse	0.009135
+       sse	0.377861
+       std	0.006466
+
+Plots saved to /home/ros/catkin_ws/src/custom_robot/evaluation/results/gmapping_20250503_173502/ate_gmapping.pdf
+
+
+==== RELATIVE POSE ERROR (RPE) ====
+RPE w.r.t. translation part (m)
+for delta = 1 (frames) using consecutive pairs
+(with Sim(3) Umeyama alignment)
+
+       max	0.095881
+      mean	0.000413
+    median	0.000003
+       min	0.000000
+      rmse	0.002558
+       sse	0.029632
+       std	0.002525
+
+Plots saved to /home/ros/catkin_ws/src/custom_robot/evaluation/results/gmapping_20250503_173502/rpe_gmapping.pdf
