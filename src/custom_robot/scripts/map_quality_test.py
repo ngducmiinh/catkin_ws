@@ -61,14 +61,13 @@ class MapQualityTest:
     def extract_occupancy_data(self, map_msg):
         height = map_msg.info.height
         width = map_msg.info.width
-        resolution = map_msg.info.resolution
         data = np.array(map_msg.data, dtype=np.int8).reshape(height, width)
         norm_data = np.ones_like(data, dtype=float) * np.nan
         norm_data[data == 0] = 0.0
         norm_data[data == 100] = 1.0
         prob_mask = (data > 0) & (data < 100)
         norm_data[prob_mask] = data[prob_mask] / 100.0
-        return norm_data, resolution
+        return norm_data, map_msg.info.resolution
 
     def resize_to_common_size(self, map1, map2, size=None):
         h1, w1 = map1.shape
@@ -122,6 +121,8 @@ class MapQualityTest:
         results = {}
         results['ref_map'] = ref
         results['test_map'] = test
+        results['roi_y'] = (y0, y1)
+        results['roi_x'] = (x0, x1)
         r_ent, r_ent_map = self.calculate_map_entropy(ref_roi)
         t_ent, t_ent_map = self.calculate_map_entropy(test_roi)
         results['ref_entropy'] = r_ent
@@ -148,29 +149,37 @@ class MapQualityTest:
     def visualize_results(self, results):
         if not results:
             return
-        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
-        ax_ref, ax_test, ax_diff = axes[0]
-        ax_overlay, ax_sim, ax_ent = axes[1]
-        im_ref = ax_ref.imshow(results['ref_map'], cmap='gray', vmin=0, vmax=1)
-        ax_ref.set_title(f"Reference Map (Entropy: {results['ref_entropy']:.4f})")
-        plt.colorbar(im_ref, ax=ax_ref)
-        im_test = ax_test.imshow(results['test_map'], cmap='gray', vmin=0, vmax=1)
-        ax_test.set_title(f"Test Map (Entropy: {results['test_entropy']:.4f})")
-        plt.colorbar(im_test, ax=ax_test)
-        im_diff = ax_diff.imshow(results['diff_map'], cmap='hot', vmin=0, vmax=1)
-        ax_diff.set_title(f"Difference Map (MSE: {results['mse']:.4f})")
-        plt.colorbar(im_diff, ax=ax_diff)
+        y0, y1 = results['roi_y']
+        x0, x1 = results['roi_x']
+        ref_roi = results['ref_map'][y0:y1, x0:x1]
+        test_roi = results['test_map'][y0:y1, x0:x1]
+        diff_roi = results['diff_map'][y0:y1, x0:x1]
+        sim_roi = results['similarity_map'][y0:y1, x0:x1]
+        ent_diff_roi = np.abs(
+            results['ref_entropy_map'][y0:y1, x0:x1] - results['test_entropy_map'][y0:y1, x0:x1]
+        )
+        ent_diff_roi[np.isnan(ent_diff_roi)] = 0
         overlay = np.zeros((*results['ref_map'].shape, 3))
         overlay[..., 0] = np.nan_to_num(results['ref_map'])
         overlay[..., 1] = np.nan_to_num(results['test_map'])
+        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+        ax_ref, ax_test, ax_diff = axes[0]
+        ax_overlay, ax_sim, ax_ent = axes[1]
+        im_ref = ax_ref.imshow(ref_roi, cmap='gray', vmin=0, vmax=1)
+        ax_ref.set_title(f"Reference Map (Entropy: {results['ref_entropy']:.4f})")
+        plt.colorbar(im_ref, ax=ax_ref)
+        im_test = ax_test.imshow(test_roi, cmap='gray', vmin=0, vmax=1)
+        ax_test.set_title(f"Test Map (Entropy: {results['test_entropy']:.4f})")
+        plt.colorbar(im_test, ax=ax_test)
+        im_diff = ax_diff.imshow(diff_roi, cmap='hot', vmin=0, vmax=1)
+        ax_diff.set_title(f"Difference Map (MSE: {results['mse']:.4f})")
+        plt.colorbar(im_diff, ax=ax_diff)
         im_overlay = ax_overlay.imshow(overlay)
         ax_overlay.set_title("Map Overlay (Red: Ref, Green: Test)")
-        im_sim = ax_sim.imshow(results['similarity_map'], cmap='viridis', vmin=0, vmax=1)
+        im_sim = ax_sim.imshow(sim_roi, cmap='viridis', vmin=0, vmax=1)
         ax_sim.set_title(f"Similarity Map (Score: {results['similarity']:.4f})")
         plt.colorbar(im_sim, ax=ax_sim)
-        ent_diff = np.abs(results['ref_entropy_map'] - results['test_entropy_map'])
-        ent_diff[np.isnan(ent_diff)] = 0
-        im_ent = ax_ent.imshow(ent_diff, cmap='plasma')
+        im_ent = ax_ent.imshow(ent_diff_roi, cmap='plasma')
         ax_ent.set_title("Entropy Difference")
         plt.colorbar(im_ent, ax=ax_ent)
         metrics_text = (
