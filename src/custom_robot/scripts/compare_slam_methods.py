@@ -7,6 +7,28 @@ import subprocess
 import matplotlib.pyplot as plt
 from datetime import datetime
 import numpy as np
+import shutil
+
+def check_dependencies():
+    """
+    Kiểm tra xem các công cụ evo đã được cài đặt chưa
+    """
+    tools = ["evo_ape_traj", "evo_rpe_traj"]
+    missing_tools = []
+    
+    for tool in tools:
+        if shutil.which(tool) is None:
+            missing_tools.append(tool)
+            
+    if missing_tools:
+        print("Lỗi: Các công cụ sau chưa được cài đặt:")
+        for tool in missing_tools:
+            print(f"  - {tool}")
+        print("\nVui lòng cài đặt gói evo bằng lệnh:")
+        print("  pip install evo")
+        return False
+    
+    return True
 
 def load_trajectory_from_file(file_path):
     """
@@ -33,6 +55,10 @@ def compare_methods(gt_file, gmapping_file, hector_file, output_dir):
     """
     So sánh hai phương pháp SLAM với groundtruth
     """
+    # Kiểm tra dependencies trước khi chạy so sánh
+    if not check_dependencies():
+        return False
+        
     print("So sánh Gmapping và Hector SLAM...")
     
     # Tạo thư mục output nếu chưa tồn tại
