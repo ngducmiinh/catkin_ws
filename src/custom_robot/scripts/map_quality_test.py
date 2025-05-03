@@ -200,8 +200,8 @@ class MapQualityTest:
         entropy_map = np.zeros_like(occupancy_map)
         entropy_map[valid_cells] = cell_entropy
         
-        # Return both mean entropy and the entropy map
-        return np.mean(cell_entropy), entropy_map
+        # Return both mean entropy (as scalar) and the entropy map
+        return float(np.mean(cell_entropy)), entropy_map
         
     def calculate_ssim(self, img1, img2):
         """Calculate structural similarity index with fallback"""
@@ -230,8 +230,10 @@ class MapQualityTest:
         # Calculate entropy for each map
         mean_entropy1, entropy_map1 = self.calculate_map_entropy(norm1)
         mean_entropy2, entropy_map2 = self.calculate_map_entropy(norm2)
-        results['entropy_map1'] = mean_entropy1
-        results['entropy_map2'] = mean_entropy2
+        results['entropy_map1'] = mean_entropy1  # Now this is a scalar float
+        results['entropy_map2'] = mean_entropy2  # Now this is a scalar float
+        results['entropy_map1_full'] = entropy_map1  # Full entropy map
+        results['entropy_map2_full'] = entropy_map2  # Full entropy map
         
         # For comparison metrics, handle NaN values
         valid_mask = ~np.isnan(norm1) & ~np.isnan(norm2)
@@ -244,8 +246,6 @@ class MapQualityTest:
             # Create empty maps for visualization
             results['norm1'] = norm1
             results['norm2'] = norm2
-            results['entropy_map1'] = entropy_map1
-            results['entropy_map2'] = entropy_map2
             results['diff_map'] = np.zeros_like(norm1)
             results['ssim_map'] = np.zeros_like(norm1)
             
@@ -253,19 +253,21 @@ class MapQualityTest:
             
         # Mean squared error of occupancy values
         mse = np.mean((norm1[valid_mask] - norm2[valid_mask])**2)
-        results['mse'] = mse
+        results['mse'] = float(mse)  # Convert to scalar float
         
         # Structural similarity index
-        # Convert to uint8 images for SSIM
-        img1 = (norm1 * 255).astype(np.uint8)
-        img2 = (norm2 * 255).astype(np.uint8)
+        # Convert to uint8 images for SSIM, handling NaN values properly
+        img1 = np.zeros_like(norm1, dtype=np.uint8)
+        img2 = np.zeros_like(norm2, dtype=np.uint8)
         
-        # Replace NaN with 0 for SSIM calculation
-        img1[np.isnan(img1)] = 0
-        img2[np.isnan(img2)] = 0
+        # Only convert valid values, avoiding NaN warnings
+        valid1 = ~np.isnan(norm1)
+        valid2 = ~np.isnan(norm2)
+        img1[valid1] = (norm1[valid1] * 255).astype(np.uint8)
+        img2[valid2] = (norm2[valid2] * 255).astype(np.uint8)
         
         ssim_value, ssim_map = self.calculate_ssim(img1, img2)
-        results['ssim'] = ssim_value
+        results['ssim'] = float(ssim_value)  # Convert to scalar float
         
         # Calculate difference map (for visualization)
         diff_map = np.abs(norm1 - norm2)
@@ -274,8 +276,6 @@ class MapQualityTest:
         # Save visualization data
         results['norm1'] = norm1
         results['norm2'] = norm2
-        results['entropy_map1'] = entropy_map1
-        results['entropy_map2'] = entropy_map2
         results['diff_map'] = diff_map
         results['ssim_map'] = ssim_map
         
@@ -305,10 +305,12 @@ class MapQualityTest:
         axes[0, 2].set_title(f"Difference Map (MSE: {results['mse']:.4f})")
         plt.colorbar(im3, ax=axes[0, 2])
         
-        # Overlay of maps
+        # Overlay of maps - handle NaN values for visualization
         overlay = np.zeros((*results['norm1'].shape, 3))
-        overlay[..., 0] = np.nan_to_num(results['norm1'])  # Red channel: Reference map
-        overlay[..., 1] = np.nan_to_num(results['norm2'])  # Green channel: Test map
+        norm1_viz = np.nan_to_num(results['norm1'])  # Replace NaN with 0
+        norm2_viz = np.nan_to_num(results['norm2'])  # Replace NaN with 0
+        overlay[..., 0] = norm1_viz  # Red channel: Reference map
+        overlay[..., 1] = norm2_viz  # Green channel: Test map
         im4 = axes[1, 0].imshow(overlay)
         axes[1, 0].set_title("Map Overlay (Red: Reference, Green: Test)")
         
@@ -321,8 +323,19 @@ class MapQualityTest:
         axes[1, 1].set_title(f"{sim_name} Map ({sim_name}: {results['ssim']:.4f})")
         plt.colorbar(im5, ax=axes[1, 1])
         
-        # Combined entropy visualization
-        entropy_diff = np.abs(results.get('entropy_map1', 0) - results.get('entropy_map2', 0))
+        # Combined entropy visualization - use full entropy maps
+        if 'entropy_map1_full' in results and 'entropy_map2_full' in results:
+            entropy_map1 = results['entropy_map1_full']
+            entropy_map2 = results['entropy_map2_full']
+        else:
+            # Create dummy maps if full maps not available
+            entropy_map1 = np.zeros_like(results['norm1'])
+            entropy_map2 = np.zeros_like(results['norm2'])
+        
+        # Calculate entropy difference with NaN handling
+        entropy_diff = np.abs(entropy_map1 - entropy_map2)
+        entropy_diff = np.nan_to_num(entropy_diff)  # Replace NaNs with 0
+        
         im6 = axes[1, 2].imshow(entropy_diff, cmap='plasma')
         axes[1, 2].set_title("Entropy Difference")
         plt.colorbar(im6, ax=axes[1, 2])
