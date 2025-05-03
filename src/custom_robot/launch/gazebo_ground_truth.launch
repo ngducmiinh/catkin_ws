@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Tham số cho node -->
+  <arg name="robot_name" default="turtlebot3"/>
+  <arg name="output_frame" default="map"/>
+
+  <!-- Khởi động node ground truth -->
+  <node pkg="custom_robot" type="gazebo_ground_truth.py" name="gazebo_ground_truth" output="screen">
+    <param name="robot_name" value="$(arg robot_name)"/>
+    <param name="output_frame" value="$(arg output_frame)"/>
+  </node>
+
+  <!-- Hiển thị trong RViz (tùy chọn) -->
+  <node pkg="rviz" type="rviz" name="rviz_ground_truth" args="-d $(find custom_robot)/rviz/ground_truth.rviz" required="false" if="false"/>
+</launch>
