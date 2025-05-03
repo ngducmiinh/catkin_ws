@@ -65,6 +65,9 @@ class MapQualityTest:
             img = Image.open(pgm_file)
             img_data = np.array(img)
             
+            # Get dimensions
+            height, width = img_data.shape
+            
             # Create OccupancyGrid message
             map_msg = OccupancyGrid()
             
@@ -74,30 +77,44 @@ class MapQualityTest:
             
             # Fill map info
             map_msg.info.resolution = float(map_data['resolution'])
-            map_msg.info.width = int(img_data.shape[1])
-            map_msg.info.height = int(img_data.shape[0])
+            map_msg.info.width = width
+            map_msg.info.height = height
             map_msg.info.origin.position.x = float(map_data['origin'][0])
             map_msg.info.origin.position.y = float(map_data['origin'][1])
             map_msg.info.origin.position.z = float(map_data['origin'][2])
             
-            # Convert PGM data to occupancy values
-            # In PGM: 0 = occupied (black), 254-255 = free (white), 205 = unknown (gray)
+            # Convert image data to occupancy values
+            # In PGM: 0 = occupied (black), 255 = free (white), 205 = unknown (gray)
             # In OccupancyGrid: 100 = occupied, 0 = free, -1 = unknown
-            occupancy_data = np.zeros(img_data.shape, dtype=np.int8).flatten()
+            occupancy_data = np.zeros(img_data.shape, dtype=np.int8)
             
-            # Handle specific threshold values based on map_saver/map_server conventions
-            occupancy_data[(img_data.flatten() >= 0) & (img_data.flatten() < 50)] = 100  # Definitely occupied
-            occupancy_data[(img_data.flatten() >= 50) & (img_data.flatten() < 200)] = 100 * (255 - img_data.flatten()) / 255  # Probabilistic (darker = more occupied)
-            occupancy_data[img_data.flatten() == 205] = -1  # Unknown
-            occupancy_data[(img_data.flatten() > 205) & (img_data.flatten() <= 255)] = 0  # Free
+            # Convert based on grayscale values
+            # Occupied cells (black/dark gray in PGM)
+            occupancy_data[img_data < 50] = 100
             
-            map_msg.data = occupancy_data.tolist()
+            # Unknown cells (specific gray value in PGM)
+            occupancy_data[np.abs(img_data - 205) < 3] = -1
+            
+            # Free cells (white/light gray in PGM)
+            occupancy_data[img_data > 250] = 0
+            
+            # Probabilistic values for other grayscales
+            mask = (img_data >= 50) & (img_data <= 250) & (np.abs(img_data - 205) >= 3)
+            if np.any(mask):
+                # Map the grayscale range [50, 250] to [99, 1] (excluding unknown value around 205)
+                # Darker = more likely occupied
+                occupancy_data[mask] = 100 - ((img_data[mask] - 50) * 99 / 200).astype(np.int8)
+            
+            # Convert to list and set in message
+            map_msg.data = occupancy_data.flatten().tolist()
             
             rospy.loginfo(f"Successfully loaded map from file: {yaml_file_path}")
             return map_msg
             
         except Exception as e:
             rospy.logerr(f"Failed to load map from file {yaml_file_path}: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def extract_occupancy_data(self, map_msg):
