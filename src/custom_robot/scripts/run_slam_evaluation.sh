@@ -4,21 +4,6 @@
 # Sử dụng: ./run_slam_evaluation.sh [gmapping|hector|both] [auto|manual]
 # Ví dụ: ./run_slam_evaluation.sh gmapping auto
 
-# Kiểm tra evo đã được cài đặt chưa
-if ! command -v evo_ape &> /dev/null; then
-    echo "ERROR: Gói evo chưa được cài đặt."
-    echo "Vui lòng cài đặt bằng lệnh: pip install evo"
-    echo "Tham khảo: https://github.com/MichaelGrupp/evo"
-    exit 1
-fi
-
-# Kiểm tra Python rosbag đã được cài đặt chưa
-python3 -c "import rosbag" 2>/dev/null || {
-    echo "ERROR: Python rosbag chưa được cài đặt."
-    echo "Vui lòng cài đặt bằng lệnh: pip install rospkg pyyaml rosbag"
-    exit 1
-}
-
 # Thiết lập các thư mục
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CATKIN_WS="$(dirname "$(dirname "$(dirname "$SCRIPT_DIR")")")"
@@ -67,35 +52,64 @@ echo "Chế độ di chuyển: $MOVEMENT_MODE"
 SESSION_DIR="$RESULTS_DIR/session_$TIMESTAMP"
 mkdir -p "$SESSION_DIR"
 
-# Ghi log
-exec > >(tee -i "$SESSION_DIR/evaluation_log.txt") 2>&1
+# Ghi log (sử dụng phương pháp đơn giản hơn để tránh lỗi)
+LOG_FILE="$SESSION_DIR/evaluation_log.txt"
+echo "=== ĐÁNH GIÁ SLAM - $(date) ===" > "$LOG_FILE"
+echo "Thư mục bags: $BAGS_DIR" >> "$LOG_FILE"
+echo "Thư mục kết quả: $RESULTS_DIR" >> "$LOG_FILE"
+
+# Kiểm tra evo đã được cài đặt chưa
+if ! command -v evo_ape &> /dev/null; then
+    echo "ERROR: Gói evo chưa được cài đặt."
+    echo "Vui lòng cài đặt bằng lệnh: pip install evo"
+    echo "Tham khảo: https://github.com/MichaelGrupp/evo"
+    echo "ERROR: Gói evo chưa được cài đặt." >> "$LOG_FILE"
+    exit 1
+fi
 
 # Dừng tất cả tiến trình ROS đang chạy
 function stop_ros_processes() {
-    echo "Dừng tất cả tiến trình ROS đang chạy..."
+    echo "Dừng tất cả tiến trình ROS đang chạy..." | tee -a "$LOG_FILE"
     
-    # Tìm và kết thúc tất cả các node ROS đang chạy
-    for pid in $(pgrep -f ros); do
-        kill -9 $pid 2>/dev/null || true
-    done
+    # Dừng nhẹ nhàng trước
+    rosnode kill -a &>/dev/null || true
+    sleep 2
     
-    # Dừng roscore nếu đang chạy
+    # Sau đó dừng mạnh nếu cần
+    # Chỉ kill các tiến trình ROS cụ thể
+    pkill -f ros || true
+    pkill -f slam_gmapping || true
+    pkill -f hector || true
+    pkill -f roslaunch || true
     pkill -f roscore || true
+    pkill -f gazebo || true
+    pkill -f test_movement.py || true
+    pkill -f record_slam_data.py || true
     
     # Đợi mọi thứ dừng lại
     sleep 3
     
-    echo "Đã dừng tất cả tiến trình ROS."
+    echo "Đã dừng tất cả tiến trình ROS." | tee -a "$LOG_FILE"
 }
 
 # Xử lý khi nhấn Ctrl+C
 trap cleanup INT
 
 function cleanup() {
-    echo -e "\nNhận tín hiệu ngắt. Đang dọn dẹp..."
+    echo -e "\nNhận tín hiệu ngắt. Đang dọn dẹp..." | tee -a "$LOG_FILE"
     stop_ros_processes
-    echo "Thoát script đánh giá."
+    echo "Thoát script đánh giá." | tee -a "$LOG_FILE"
     exit 1
+}
+
+# Kiểm tra xem một tiến trình có tồn tại và chạy không
+function check_process() {
+    local pid=$1
+    if [ -n "$pid" ] && ps -p "$pid" &>/dev/null; then
+        return 0  # Tiến trình đang chạy
+    else
+        return 1  # Tiến trình không tồn tại hoặc không chạy
+    fi
 }
 
 # Hàm thu thập dữ liệu SLAM
@@ -106,83 +120,110 @@ function collect_data() {
     stop_ros_processes
     
     # Khởi động roscore
-    echo "Khởi động roscore..."
+    echo "Khởi động roscore..." | tee -a "$LOG_FILE"
     roscore &
     ROSCORE_PID=$!
-    
-    # Đợi roscore khởi động
     sleep 5
     
-    echo "=== THU THẬP DỮ LIỆU $slam_method ==="
-    
-    # Khởi động SLAM với mô phỏng Gazebo
-    echo "Khởi động $slam_method SLAM với mô phỏng..."
-    if [ "$slam_method" = "gmapping" ]; then
-        # Khởi động với Gmapping
-        roslaunch turtlebot3_gazebo turtlebot3_world.launch &
-        GAZEBO_PID=$!
-        sleep 10  # Đợi Gazebo khởi động
-        
-        roslaunch custom_robot custom_slam.launch slam_methods:=gmapping &
-        SLAM_PID=$!
-    else
-        # Khởi động với Hector
-        roslaunch turtlebot3_gazebo turtlebot3_world.launch &
-        GAZEBO_PID=$!
-        sleep 10  # Đợi Gazebo khởi động
-        
-        roslaunch custom_robot custom_slam.launch slam_methods:=hector &
-        SLAM_PID=$!
+    # Kiểm tra roscore có chạy không
+    if ! check_process $ROSCORE_PID; then
+        echo "Lỗi: Không thể khởi động roscore." | tee -a "$LOG_FILE"
+        return 1
     fi
     
-    # Đợi SLAM khởi động hoàn tất
-    sleep 8
+    echo "=== THU THẬP DỮ LIỆU $slam_method ===" | tee -a "$LOG_FILE"
+    
+    # Khởi động mô phỏng Gazebo
+    echo "Khởi động môi trường mô phỏng Gazebo..." | tee -a "$LOG_FILE"
+    export TURTLEBOT3_MODEL=burger
+    roslaunch turtlebot3_gazebo turtlebot3_world.launch &
+    GAZEBO_PID=$!
+    sleep 15  # Đợi Gazebo khởi động đầy đủ
+    
+    # Kiểm tra Gazebo có chạy không
+    if ! check_process $GAZEBO_PID; then
+        echo "Lỗi: Không thể khởi động Gazebo." | tee -a "$LOG_FILE"
+        stop_ros_processes
+        return 1
+    fi
+    
+    # Khởi động SLAM
+    echo "Khởi động $slam_method SLAM..." | tee -a "$LOG_FILE"
+    roslaunch custom_robot custom_slam.launch slam_methods:=$slam_method &
+    SLAM_PID=$!
+    sleep 10  # Đợi SLAM khởi động
+    
+    # Kiểm tra SLAM có chạy không
+    if ! check_process $SLAM_PID; then
+        echo "Lỗi: Không thể khởi động $slam_method SLAM." | tee -a "$LOG_FILE"
+        stop_ros_processes
+        return 1
+    fi
     
     # Bắt đầu ghi dữ liệu
-    echo "Bắt đầu ghi dữ liệu rosbag cho $slam_method trong $DURATION giây..."
+    echo "Bắt đầu ghi dữ liệu rosbag cho $slam_method trong $DURATION giây..." | tee -a "$LOG_FILE"
     BAG_FILE="$BAGS_DIR/${slam_method}_$TIMESTAMP.bag"
     
-    # Khởi động ghi dữ liệu trong tiến trình nền
-    python3 "$SCRIPT_DIR/record_slam_data.py" --method $slam_method --duration $DURATION --name "${slam_method}_$TIMESTAMP" &
+    # Trực tiếp ghi dữ liệu rosbag
+    echo "Ghi dữ liệu vào: $BAG_FILE" | tee -a "$LOG_FILE"
+    rosbag record -O "$BAG_FILE" /scan /tf /map /odom /gazebo/model_states /tf_static __name:=rosbag_record &
     RECORD_PID=$!
+    sleep 5
     
     # Di chuyển robot
     if [ "$MOVEMENT_MODE" = "auto" ]; then
-        echo "Chế độ tự động: Robot sẽ di chuyển theo mẫu khám phá..."
+        echo "Chế độ tự động: Robot sẽ di chuyển theo mẫu khám phá..." | tee -a "$LOG_FILE"
+        
+        # Kiểm tra script di chuyển tự động
+        if [ ! -f "$SCRIPT_DIR/test_movement.py" ]; then
+            # Tạo script di chuyển tự động nếu chưa có
+            create_movement_script
+        fi
+        
         # Chạy script di chuyển tự động
+        chmod +x "$SCRIPT_DIR/test_movement.py"
         python3 "$SCRIPT_DIR/test_movement.py" --duration $DURATION --exploration &
         MOVE_PID=$!
     else
-        echo -e "\n====================================="
-        echo "CHẾ ĐỘ THỦ CÔNG: Vui lòng điều khiển robot bằng bàn phím"
-        echo "Mở terminal mới và chạy lệnh sau:"
-        echo "  roslaunch turtlebot3_teleop turtlebot3_teleop_key.launch"
-        echo -e "=====================================\n"
+        echo -e "\n=====================================" | tee -a "$LOG_FILE"
+        echo "CHẾ ĐỘ THỦ CÔNG: Vui lòng điều khiển robot bằng bàn phím" | tee -a "$LOG_FILE"
+        echo "Mở terminal mới và chạy lệnh sau:" | tee -a "$LOG_FILE"
+        echo "  roslaunch turtlebot3_teleop turtlebot3_teleop_key.launch" | tee -a "$LOG_FILE"
+        echo -e "=====================================\n" | tee -a "$LOG_FILE"
     fi
     
-    # Đợi quá trình ghi dữ liệu hoàn tất
-    echo "Đang thu thập dữ liệu... (còn $DURATION giây)"
-    wait $RECORD_PID || true
+    # Đợi đủ thời gian thu thập dữ liệu
+    echo "Đang thu thập dữ liệu... (trong $DURATION giây)" | tee -a "$LOG_FILE"
+    countdown=$DURATION
+    while [ $countdown -gt 0 ]; do
+        if [ $((countdown % 10)) -eq 0 ]; then
+            echo "Còn $countdown giây..." | tee -a "$LOG_FILE"
+        fi
+        sleep 1
+        countdown=$((countdown - 1))
+    done
     
-    echo "Đã hoàn thành việc thu thập dữ liệu cho $slam_method."
-    echo "File bag: $BAG_FILE"
+    # Dừng ghi dữ liệu
+    echo "Dừng ghi dữ liệu..." | tee -a "$LOG_FILE"
+    rosnode kill /rosbag_record
+    sleep 2
     
-    # Dừng tiến trình di chuyển tự động nếu có
-    if [ "$MOVEMENT_MODE" = "auto" ] && ps -p $MOVE_PID > /dev/null; then
-        kill $MOVE_PID || true
+    echo "Đã hoàn thành việc thu thập dữ liệu cho $slam_method." | tee -a "$LOG_FILE"
+    echo "File bag: $BAG_FILE" | tee -a "$LOG_FILE"
+    
+    # Dừng các tiến trình
+    if [ "$MOVEMENT_MODE" = "auto" ] && check_process $MOVE_PID; then
+        kill $MOVE_PID 2>/dev/null || true
     fi
     
-    # Dừng các tiến trình còn lại
-    if ps -p $SLAM_PID > /dev/null; then
-        kill $SLAM_PID || true
-    fi
+    # Dừng các tiến trình SLAM và Gazebo
+    stop_ros_processes
     
-    if ps -p $GAZEBO_PID > /dev/null; then
-        kill $GAZEBO_PID || true
+    # Kiểm tra file bag có tồn tại và không rỗng
+    if [ ! -f "$BAG_FILE" ] || [ ! -s "$BAG_FILE" ]; then
+        echo "Lỗi: File bag không tồn tại hoặc rỗng!" | tee -a "$LOG_FILE"
+        return 1
     fi
-    
-    # Đợi mọi thứ dừng lại
-    sleep 3
     
     return 0
 }
@@ -192,28 +233,33 @@ function evaluate_slam() {
     local slam_method=$1
     local bag_file="$BAGS_DIR/${slam_method}_$TIMESTAMP.bag"
     
-    echo "=== ĐÁNH GIÁ $slam_method SLAM ==="
+    echo "=== ĐÁNH GIÁ $slam_method SLAM ===" | tee -a "$LOG_FILE"
     
     if [ ! -f "$bag_file" ]; then
-        echo "Lỗi: Không tìm thấy file bag cho $slam_method: $bag_file"
+        echo "Lỗi: Không tìm thấy file bag cho $slam_method: $bag_file" | tee -a "$LOG_FILE"
         return 1
     fi
     
-    echo "Đánh giá $slam_method sử dụng file: $bag_file"
-    python3 "$SCRIPT_DIR/evaluate_slam.py" --bag "$bag_file" --method "$slam_method" --output_dir "$SESSION_DIR/$slam_method"
+    echo "Đánh giá $slam_method sử dụng file: $bag_file" | tee -a "$LOG_FILE"
     
-    if [ $? -eq 0 ]; then
-        echo "Đã hoàn thành đánh giá $slam_method."
+    # Gọi script đánh giá và ghi log
+    python3 "$SCRIPT_DIR/evaluate_slam.py" --bag "$bag_file" --method "$slam_method" --output_dir "$SESSION_DIR/$slam_method" 2>&1 | tee -a "$LOG_FILE"
+    
+    # Lấy mã trạng thái của lệnh python (sẽ là mã trạng thái của lệnh đầu tiên trong pipe)
+    local status=${PIPESTATUS[0]}
+    
+    if [ $status -eq 0 ]; then
+        echo "Đã hoàn thành đánh giá $slam_method." | tee -a "$LOG_FILE"
         return 0
     else
-        echo "Lỗi khi đánh giá $slam_method."
+        echo "Lỗi khi đánh giá $slam_method (mã lỗi: $status)." | tee -a "$LOG_FILE"
         return 1
     fi
 }
 
-# Tạo script di chuyển tự động nếu chưa có
-if [ "$MOVEMENT_MODE" = "auto" ] && [ ! -f "$SCRIPT_DIR/test_movement.py" ]; then
-    echo "Đang tạo script di chuyển tự động..."
+# Hàm tạo script di chuyển tự động
+function create_movement_script() {
+    echo "Đang tạo script di chuyển tự động..." | tee -a "$LOG_FILE"
     cat > "$SCRIPT_DIR/test_movement.py" << 'EOF'
 #!/usr/bin/env python3
 
@@ -413,23 +459,38 @@ if __name__ == "__main__":
     main()
 EOF
     chmod +x "$SCRIPT_DIR/test_movement.py"
-    echo "Đã tạo script di chuyển tự động tại: $SCRIPT_DIR/test_movement.py"
+    echo "Đã tạo script di chuyển tự động tại: $SCRIPT_DIR/test_movement.py" | tee -a "$LOG_FILE"
+}
+
+# --- CHƯƠNG TRÌNH CHÍNH ---
+
+# Kiểm tra môi trường
+export TURTLEBOT3_MODEL=burger
+
+# Tạo script di chuyển tự động nếu cần
+if [ "$MOVEMENT_MODE" = "auto" ] && [ ! -f "$SCRIPT_DIR/test_movement.py" ]; then
+    create_movement_script
 fi
 
-# Thực hiện thu thập dữ liệu và đánh giá
+# Thực hiện thu thập dữ liệu và đánh giá cho Gmapping
 if [ "$METHOD" = "gmapping" ] || [ "$METHOD" = "both" ]; then
+    echo "--- BẮT ĐẦU ĐÁNH GIÁ GMAPPING ---" | tee -a "$LOG_FILE"
     collect_data "gmapping"
     evaluate_slam "gmapping"
+    echo "--- KẾT THÚC ĐÁNH GIÁ GMAPPING ---" | tee -a "$LOG_FILE"
 fi
 
+# Thực hiện thu thập dữ liệu và đánh giá cho Hector
 if [ "$METHOD" = "hector" ] || [ "$METHOD" = "both" ]; then
+    echo "--- BẮT ĐẦU ĐÁNH GIÁ HECTOR ---" | tee -a "$LOG_FILE"
     collect_data "hector"
     evaluate_slam "hector"
+    echo "--- KẾT THÚC ĐÁNH GIÁ HECTOR ---" | tee -a "$LOG_FILE"
 fi
 
 # So sánh cả hai phương pháp nếu đã thu thập đủ dữ liệu
 if [ "$METHOD" = "both" ]; then
-    echo "=== SO SÁNH GMAPPING VÀ HECTOR SLAM ==="
+    echo "=== SO SÁNH GMAPPING VÀ HECTOR SLAM ===" | tee -a "$LOG_FILE"
     
     # Kiểm tra file quỹ đạo đã tồn tại chưa
     GMAPPING_TRAJ=$(find "$SESSION_DIR/gmapping" -name "gmapping_trajectory_*.txt" | head -1)
@@ -437,18 +498,33 @@ if [ "$METHOD" = "both" ]; then
     GT_FILE=$(find "$SESSION_DIR/gmapping" -name "groundtruth_*.txt" | head -1)
     
     if [ -z "$GMAPPING_TRAJ" ] || [ -z "$HECTOR_TRAJ" ] || [ -z "$GT_FILE" ]; then
-        echo "Không tìm thấy đủ các file quỹ đạo để so sánh."
-        echo "  Gmapping: $GMAPPING_TRAJ"
-        echo "  Hector: $HECTOR_TRAJ"
-        echo "  Ground truth: $GT_FILE"
+        echo "Không tìm thấy đủ các file quỹ đạo để so sánh:" | tee -a "$LOG_FILE"
+        echo "  Gmapping: $GMAPPING_TRAJ" | tee -a "$LOG_FILE"
+        echo "  Hector: $HECTOR_TRAJ" | tee -a "$LOG_FILE"
+        echo "  Ground truth: $GT_FILE" | tee -a "$LOG_FILE"
     else
-        echo "So sánh Gmapping và Hector SLAM..."
-        python3 "$SCRIPT_DIR/compare_slam_methods.py" --gt "$GT_FILE" --gmapping "$GMAPPING_TRAJ" --hector "$HECTOR_TRAJ" --output_dir "$SESSION_DIR/comparison"
+        echo "So sánh Gmapping và Hector SLAM..." | tee -a "$LOG_FILE"
+        python3 "$SCRIPT_DIR/compare_slam_methods.py" --gt "$GT_FILE" --gmapping "$GMAPPING_TRAJ" --hector "$HECTOR_TRAJ" --output_dir "$SESSION_DIR/comparison" 2>&1 | tee -a "$LOG_FILE"
     fi
 fi
 
-# Dừng tất cả tiến trình ROS
+# Dừng tất cả tiến trình ROS còn lại
 stop_ros_processes
 
-echo "=== ĐÁNH GIÁ SLAM HOÀN THÀNH - $(date) ==="
-echo "Kết quả được lưu tại: $SESSION_DIR"
+echo "=== ĐÁNH GIÁ SLAM HOÀN THÀNH - $(date) ===" | tee -a "$LOG_FILE"
+echo "Kết quả được lưu tại: $SESSION_DIR" | tee -a "$LOG_FILE"
+
+# Hiển thị đường dẫn đến kết quả
+echo ""
+echo "Tóm tắt kết quả:"
+echo "- Log đánh giá: $LOG_FILE"
+echo "- Thư mục kết quả: $SESSION_DIR"
+if [ -d "$SESSION_DIR/gmapping" ]; then
+    echo "- Kết quả Gmapping: $SESSION_DIR/gmapping"
+fi
+if [ -d "$SESSION_DIR/hector" ]; then
+    echo "- Kết quả Hector: $SESSION_DIR/hector"
+fi
+if [ -d "$SESSION_DIR/comparison" ]; then
+    echo "- Kết quả so sánh: $SESSION_DIR/comparison"
+fi
