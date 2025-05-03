@@ -33,8 +33,12 @@ class MapQualityTest:
             os.makedirs(self.save_dir)
             
         self.result_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
         # Target size for resizing maps (default: use reference map size)
         self.target_size = None
+        
+        # Force same size flag - when true, always resize to match
+        self.force_same_size = True
         
     def load_map_from_topic(self, topic_name, timeout=10):
         """Load a map from a ROS topic"""
@@ -139,26 +143,35 @@ class MapQualityTest:
         
         rospy.loginfo(f"Map dimensions - Reference: {shape1}, Test: {shape2}")
         
-        # If maps have different dimensions, resize the test map to match reference
-        if shape1 != shape2:
-            if self.target_size:
-                target_shape = self.target_size
-                rospy.loginfo(f"Resizing both maps to target size: {target_shape}")
-                norm1 = self.resize_map(data1, shape1, target_shape)
-                norm2 = self.resize_map(data2, shape2, target_shape)
+        # Determine target shape for resizing
+        target_shape = None
+        if self.target_size:
+            # Use user-specified target size
+            target_shape = self.target_size
+            rospy.loginfo(f"Resizing both maps to user-specified target size: {target_shape}")
+        elif self.force_same_size or shape1 != shape2:
+            # Use the smaller of the two sizes or reference map size
+            if self.force_same_size and shape1 != shape2:
+                # When forcing same size, choose the size based on area to preserve detail
+                if shape1[0] * shape1[1] <= shape2[0] * shape2[1]:
+                    target_shape = shape1
+                    resize_reason = "reference (smaller)"
+                else:
+                    target_shape = shape2
+                    resize_reason = "test (smaller)"
+                rospy.loginfo(f"Maps have different dimensions. Resizing both to match {resize_reason} map: {target_shape}")
             else:
-                # Use the reference map's size as the target
-                rospy.loginfo(f"Maps have different dimensions. Resizing test map to match reference: {shape1}")
-                # Normalize and reshape reference map
-                norm1 = np.zeros(shape1, dtype=float)
-                data1_2d = data1.reshape(shape1)
-                norm1[data1_2d == -1] = np.nan
-                norm1[data1_2d >= 0] = data1_2d[data1_2d >= 0] / 100.0
-                
-                # Resize test map to match reference
-                norm2 = self.resize_map(data2, shape2, shape1)
+                # If not forcing but sizes differ, use reference size
+                target_shape = shape1
+                rospy.loginfo(f"Maps have different dimensions. Resizing test map to match reference: {target_shape}")
+        
+        # Resize maps if needed
+        if target_shape:
+            # Resize both maps to target shape
+            norm1 = self.resize_map(data1, shape1, target_shape)
+            norm2 = self.resize_map(data2, shape2, target_shape)
         else:
-            # Maps have the same dimensions, just normalize them
+            # Maps have same dimensions, just normalize them
             norm1 = np.zeros(shape1, dtype=float)
             data1_2d = data1.reshape(shape1)
             norm1[data1_2d == -1] = np.nan
@@ -169,6 +182,7 @@ class MapQualityTest:
             norm2[data2_2d == -1] = np.nan
             norm2[data2_2d >= 0] = data2_2d[data2_2d >= 0] / 100.0
         
+        rospy.loginfo(f"Final map dimensions for comparison: {norm1.shape}")
         return norm1, norm2
     
     def calculate_map_entropy(self, occupancy_map):
@@ -395,6 +409,8 @@ def main():
                       help='Directory to save results (default: ~/map_quality_results)')
     parser.add_argument('--target-size', type=str,
                       help='Target size for resizing maps, format: WIDTHxHEIGHT (e.g., 384x384)')
+    parser.add_argument('--auto-size', action='store_true',
+                      help='Auto-select the smaller size of the two maps for resizing')
     
     args = parser.parse_args()
     
@@ -424,6 +440,11 @@ def main():
             except:
                 rospy.logwarn("Invalid target size format. Expected: WIDTHxHEIGHT (e.g., 384x384)")
         
+        # Enable auto-size selection if specified
+        if args.auto_size:
+            map_quality_test.force_same_size = True
+            rospy.loginfo("Auto-selecting optimal map size for comparison")
+            
         map_quality_test.run_evaluation(
             reference_topic=args.ref_topic,
             test_topic=args.test_topic,
