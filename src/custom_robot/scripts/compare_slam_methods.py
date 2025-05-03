@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 
-import os
-import sys
 import argparse
+import os
 import subprocess
 import matplotlib.pyplot as plt
 from datetime import datetime
-import numpy as np
 import shutil
 
 def check_dependencies():
     """
-    Kiểm tra xem các công cụ evo đã được cài đặt chưa
+    Kiểm tra các công cụ evo được cài đặt
     """
-    tools = ["evo_ape_traj", "evo_rpe_traj"]
+    tools = ["evo_ape", "evo_rpe"]
     missing_tools = []
     
     for tool in tools:
@@ -30,38 +28,29 @@ def check_dependencies():
     
     return True
 
-def load_trajectory_from_file(file_path):
-    """
-    Đọc dữ liệu quỹ đạo từ file TUM format
-    """
-    if not os.path.isfile(file_path):
-        print(f"Lỗi: File không tồn tại: {file_path}")
-        return None
-        
-    data = []
-    with open(file_path, 'r') as f:
-        for line in f:
-            values = line.strip().split()
-            if len(values) == 8:
-                data.append([float(v) for v in values])
-    
-    if not data:
-        print(f"Không có dữ liệu trong file {file_path}")
-        return None
-        
-    return np.array(data)
-
-def compare_methods(gt_file, gmapping_file, hector_file, output_dir):
+def compare_methods(gt_file, gmapping_file, hector_file, output_dir=None):
     """
     So sánh hai phương pháp SLAM với groundtruth
     """
-    # Kiểm tra dependencies trước khi chạy so sánh
-    if not check_dependencies():
-        return False
-        
     print("So sánh Gmapping và Hector SLAM...")
     
-    # Tạo thư mục output nếu chưa tồn tại
+    # Kiểm tra xem các file có tồn tại không
+    files_to_check = [gt_file, gmapping_file, hector_file]
+    for f in files_to_check:
+        if not os.path.isfile(f):
+            print(f"Lỗi: File không tồn tại: {f}")
+            return False
+    
+    # Kiểm tra các công cụ cần thiết đã được cài đặt
+    if not check_dependencies():
+        return False
+    
+    # Thiết lập thư mục output
+    if output_dir is None:
+        # Sử dụng thư mục chứa file gmapping làm output
+        output_dir = os.path.dirname(gmapping_file)
+    
+    # Đảm bảo thư mục output tồn tại
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
@@ -69,85 +58,111 @@ def compare_methods(gt_file, gmapping_file, hector_file, output_dir):
     comparison_plot = os.path.join(output_dir, f"comparison_plot_{timestamp}.pdf")
     comparison_results = os.path.join(output_dir, f"comparison_results_{timestamp}.txt")
     
-    # Chạy lệnh evo_ape_traj để so sánh với ground truth
-    compare_cmd = [
-        "evo_ape_traj", "tum", 
-        "--ref", gt_file,
-        "--est", gmapping_file, hector_file,
-        "--label", "Gmapping", "Hector",
+    # So sánh cả hai phương pháp với ground truth (ATE)
+    gmapping_ate_cmd = [
+        "evo_ape", "tum", gt_file, gmapping_file,
         "-p", "--plot_mode", "xy",
-        "--save_plot", comparison_plot,
-        "--save_results", os.path.join(output_dir, f"comparison_data_{timestamp}.zip")
+        "--save_plot", os.path.join(output_dir, f"gmapping_ate_{timestamp}.pdf"),
+        "--save_results", os.path.join(output_dir, f"gmapping_ate_{timestamp}.zip"),
+        "--align", "--correct_scale"
     ]
     
+    hector_ate_cmd = [
+        "evo_ape", "tum", gt_file, hector_file,
+        "-p", "--plot_mode", "xy",
+        "--save_plot", os.path.join(output_dir, f"hector_ate_{timestamp}.pdf"),
+        "--save_results", os.path.join(output_dir, f"hector_ate_{timestamp}.zip"),
+        "--align", "--correct_scale"
+    ]
+    
+    # So sánh cả hai phương pháp cùng lúc
+    comparison_cmd = [
+        "evo_ape", "tum", gt_file, gmapping_file, hector_file,
+        "-p", "--plot_mode", "xy",
+        "--save_plot", comparison_plot,
+        "--save_results", os.path.join(output_dir, f"comparison_data_{timestamp}.zip"),
+        "--align", "--correct_scale"
+    ]
+    
+    # Tạo file để lưu kết quả
+    results_file = open(comparison_results, "w")
+    
+    # Chạy đánh giá cho Gmapping
+    print("\n[1/3] Đánh giá Gmapping...")
     try:
-        result = subprocess.run(compare_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        print(result.stdout)
-        
-        # Lưu kết quả vào file
-        with open(comparison_results, 'w') as f:
-            f.write("=== SO SÁNH GMAPPING VÀ HECTOR SLAM ===\n\n")
-            f.write(result.stdout)
+        gmapping_result = subprocess.run(
+            gmapping_ate_cmd, 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.PIPE, 
+            text=True
+        )
+        print(gmapping_result.stdout)
+        if gmapping_result.stderr and "error" in gmapping_result.stderr.lower():
+            print(f"Lỗi Gmapping: {gmapping_result.stderr}")
             
-            if result.stderr:
-                f.write("\n=== LỖI ===\n")
-                f.write(result.stderr)
-        
-        # Chạy lệnh evo_rpe_traj để so sánh RPE
-        print("\nSo sánh Relative Pose Error (RPE)...")
-        
-        rpe_cmd = [
-            "evo_rpe_traj", "tum", 
-            "--ref", gt_file,
-            "--est", gmapping_file, hector_file,
-            "--label", "Gmapping", "Hector",
-            "-p", "--plot_mode", "xy",
-            "--save_plot", os.path.join(output_dir, f"rpe_comparison_{timestamp}.pdf"),
-            "--save_results", os.path.join(output_dir, f"rpe_comparison_data_{timestamp}.zip")
-        ]
-        
-        rpe_result = subprocess.run(rpe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        print(rpe_result.stdout)
-        
-        # Lưu thêm kết quả RPE vào file
-        with open(comparison_results, 'a') as f:
-            f.write("\n\n=== SO SÁNH RELATIVE POSE ERROR (RPE) ===\n\n")
-            f.write(rpe_result.stdout)
+        results_file.write("==== GMAPPING ATE ====\n")
+        results_file.write(gmapping_result.stdout)
+        results_file.write("\n\n")
+    except Exception as e:
+        print(f"Lỗi khi đánh giá Gmapping: {e}")
+    
+    # Chạy đánh giá cho Hector
+    print("\n[2/3] Đánh giá Hector SLAM...")
+    try:
+        hector_result = subprocess.run(
+            hector_ate_cmd, 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.PIPE, 
+            text=True
+        )
+        print(hector_result.stdout)
+        if hector_result.stderr and "error" in hector_result.stderr.lower():
+            print(f"Lỗi Hector: {hector_result.stderr}")
             
-            if rpe_result.stderr:
-                f.write("\n=== LỖI RPE ===\n")
-                f.write(rpe_result.stderr)
-                
-        print(f"\nKết quả so sánh đã được lưu vào {comparison_results}")
-        print(f"Đồ thị so sánh ATE: {comparison_plot}")
-        print(f"Đồ thị so sánh RPE: {os.path.join(output_dir, f'rpe_comparison_{timestamp}.pdf')}")
-        
+        results_file.write("==== HECTOR SLAM ATE ====\n")
+        results_file.write(hector_result.stdout)
+        results_file.write("\n\n")
+    except Exception as e:
+        print(f"Lỗi khi đánh giá Hector: {e}")
+    
+    # So sánh cả hai phương pháp
+    print("\n[3/3] So sánh Gmapping và Hector SLAM...")
+    try:
+        comparison_result = subprocess.run(
+            comparison_cmd, 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.PIPE, 
+            text=True
+        )
+        print(comparison_result.stdout)
+        if comparison_result.stderr and "error" in comparison_result.stderr.lower():
+            print(f"Lỗi khi so sánh: {comparison_result.stderr}")
+            
+        results_file.write("==== SO SÁNH CẢ HAI PHƯƠNG PHÁP ====\n")
+        results_file.write(comparison_result.stdout)
     except Exception as e:
         print(f"Lỗi khi so sánh các phương pháp SLAM: {e}")
-        return False
-        
+    
+    results_file.close()
+    
+    print(f"\nKết quả so sánh đã được lưu vào {comparison_results}")
+    print(f"Đồ thị so sánh: {comparison_plot}")
+    
     return True
 
 def main():
-    parser = argparse.ArgumentParser(description='So sánh các phương pháp SLAM')
+    parser = argparse.ArgumentParser(description='So sánh phương pháp SLAM Gmapping và Hector')
     parser.add_argument('--gt', required=True,
-                      help='Đường dẫn tới file quỹ đạo ground truth')
+                        help='Đường dẫn tới file quỹ đạo ground truth (định dạng TUM)')
     parser.add_argument('--gmapping', required=True,
-                      help='Đường dẫn tới file quỹ đạo Gmapping')
+                        help='Đường dẫn tới file quỹ đạo Gmapping (định dạng TUM)')
     parser.add_argument('--hector', required=True,
-                      help='Đường dẫn tới file quỹ đạo Hector')
-    parser.add_argument('--output_dir', default=os.path.expanduser("~/catkin_ws/src/custom_robot/evaluation/results/comparison"),
-                      help='Thư mục lưu kết quả')
+                        help='Đường dẫn tới file quỹ đạo Hector SLAM (định dạng TUM)')
+    parser.add_argument('--output_dir', default=None,
+                        help='Thư mục lưu kết quả')
     
     args = parser.parse_args()
     
-    # Kiểm tra các file đầu vào
-    for file_path, name in [(args.gt, "Ground truth"), (args.gmapping, "Gmapping"), (args.hector, "Hector")]:
-        if not os.path.isfile(file_path):
-            print(f"Lỗi: File {name} không tồn tại: {file_path}")
-            return
-    
-    # So sánh các phương pháp
     compare_methods(args.gt, args.gmapping, args.hector, args.output_dir)
 
 if __name__ == "__main__":
