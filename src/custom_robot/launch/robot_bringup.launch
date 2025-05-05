@@ -22,9 +22,9 @@
   <node name="odom_converter" pkg="custom_robot" type="odom_converter.py" output="screen">
   </node>
 
-  <!-- RViz for visualization (optional) -->
+  <!-- RViz for visualization (optional) 
   <arg name="rviz" default="false" />
   <group if="$(arg rviz)">
     <node name="rviz" pkg="rviz" type="rviz" args="-d $(find turtlebot3_description)/rviz/burger.rviz" />
-  </group>
+  </group> -->
 </launch>
