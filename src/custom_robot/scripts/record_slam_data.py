@@ -8,6 +8,18 @@ import argparse
 import subprocess
 from datetime import datetime
 
+def create_directory_if_not_exists(directory):
+    """Tạo thư mục nếu nó không tồn tại."""
+    if not os.path.exists(directory):
+        try:
+            os.makedirs(directory)
+            print(f"Đã tạo thư mục: {directory}")
+            return True
+        except Exception as e:
+            print(f"Không thể tạo thư mục {directory}: {e}")
+            return False
+    return True
+
 def main():
     parser = argparse.ArgumentParser(description='Ghi dữ liệu SLAM để đánh giá')
     parser.add_argument('--method', type=str, default='gmapping',
@@ -16,6 +28,8 @@ def main():
                       help='Thời gian ghi dữ liệu (giây)')
     parser.add_argument('--name', type=str, default=None,
                       help='Tên cho file bag (mặc định: method_timestamp)')
+    parser.add_argument('--output', type=str, default=None,
+                      help='Thư mục lưu file bag (mặc định: ~/catkin_ws/src/custom_robot/evaluation/bags/)')
     args = parser.parse_args()
 
     if args.method not in ['gmapping', 'hector']:
@@ -25,7 +39,35 @@ def main():
     # Tạo tên file dựa trên thời gian
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     bag_name = args.name if args.name else f"{args.method}_{timestamp}"
-    bag_path = os.path.expanduser(f"~/catkin_ws/src/custom_robot/evaluation/bags/{bag_name}.bag")
+    
+    # Xác định thư mục lưu trữ
+    if args.output:
+        bag_dir = os.path.expanduser(args.output)
+    else:
+        # Thử các vị trí lưu trữ khác nhau theo thứ tự ưu tiên
+        possible_dirs = [
+            os.path.expanduser("~/catkin_ws/src/custom_robot/evaluation/bags/"),
+            os.path.expanduser("~/bags/"),
+            os.path.expanduser("~/")
+        ]
+        
+        bag_dir = None
+        for directory in possible_dirs:
+            if create_directory_if_not_exists(directory) and os.access(directory, os.W_OK):
+                bag_dir = directory
+                break
+        
+        if bag_dir is None:
+            print("Lỗi: Không tìm thấy thư mục nào có quyền ghi.")
+            return
+    
+    # Đảm bảo thư mục tồn tại
+    if not create_directory_if_not_exists(bag_dir):
+        print(f"Lỗi: Không thể tạo thư mục {bag_dir}")
+        return
+    
+    # Đường dẫn đầy đủ cho file bag
+    bag_path = os.path.join(bag_dir, f"{bag_name}.bag")
 
     print(f"Bắt đầu ghi dữ liệu với phương pháp {args.method} trong {args.duration} giây")
     print(f"Dữ liệu sẽ được lưu tại: {bag_path}")
@@ -36,16 +78,23 @@ def main():
         "/tf",                       # Transform frames
         "/map",                      # Bản đồ được tạo ra
         "/odom",                     # Odometry từ robot
-        "/gazebo/model_states",      # Ground truth từ mô phỏng (vị trí thật của robot)
+        "/odom_converted",           # Odometry đã chuyển đổi (nếu có)
+        #"/gazebo/model_states",      # Ground truth từ mô phỏng (vị trí thật của robot)
+
         f"/{args.method}_slam/pose", # Vị trí ước lượng từ thuật toán SLAM
         "/tf_static"                 # Static transforms
     ]
 
+    # Loại bỏ topic không tồn tại trong môi trường robot thực
+    if "/gazebo/model_states" in topics:
+        topics.remove("/gazebo/model_states")  # Loại bỏ topic chỉ có trong mô phỏng
+        
     topic_arg = " ".join([f"-e '{topic}'" for topic in topics])
     
     try:
         # Bắt đầu ghi rosbag
         cmd = f"rosbag record -O {bag_path} {topic_arg}"
+        print(f"Đang chạy lệnh: {cmd}")
         rosbag_process = subprocess.Popen(cmd, shell=True)
         
         # Chờ đủ thời gian
