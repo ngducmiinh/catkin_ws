@@ -47,9 +47,9 @@
     <param name="pub_debug_output" value="true"/>
   </node>
   
-  <!-- RVIZ -->
+  <!-- RVIZ 
   <group if="$(arg open_rviz)"> 
     <node pkg="rviz" type="rviz" name="rviz" required="true"
           args="-d $(find turtlebot3_slam)/rviz/turtlebot3_hector.rviz"/>
-  </group>
+  </group> -->
 </launch>
