@@ -1,144 +1,176 @@
-#!/usr/bin/env python3
 
 import rospy
+import sys
+import select
+import os
 from std_msgs.msg import Float32MultiArray
+import threading
 import sys, select, termios, tty
+
+if os.name == 'nt':
+    import msvcrt
+else:
+    import tty
+    import termios
+
+LINEAR_SPEED_PWM = 50
+ANGULAR_SPEED_PWM = 50
 
 MSG = """
 Control Your Robot!
 ---------------------------
+Reading from the keyboard  and Publishing to Twist!
+---------------------------
 Moving around:
-   q    w    e
-   a    s    d
-   z    x    c
-
-w/x : increase/decrease linear velocity
-a/d : increase/decrease angular velocity
-s : stop
-q/e/z/c : curve movement
+       i    
+   j    k    l
+       ,    
 
 CTRL-C to quit
 """
 
-# Tốc độ tối đa
-MAX_LINEAR = 100  # Điều chỉnh giá trị này phù hợp với robot của bạn
-MAX_ANGULAR = 50  # Điều chỉnh giá trị này phù hợp với robot của bạn
+ERROR_MSG = """
+Teleop Class Failed
+"""
+moveBindings = {
+        'i':(1,1),
+        'j':(-1,1),
+        'l':(1,-1),
+        ',':(-1,-1),
+        'k':(0,0)
+    }
 
-# Tốc độ giảm dần
-LIN_VEL_STEP_SIZE = 10
-ANG_VEL_STEP_SIZE = 5
+class TeleopKey(threading.Thread):
+    def __init__(self, rate):
+        super(TeleopKey, self).__init__()
 
-class CustomTeleop:
-    def __init__(self):
-        rospy.init_node('custom_teleop')
         self.pub = rospy.Publisher('robot_control', Float32MultiArray, queue_size=10)
-        self.settings = termios.tcgetattr(sys.stdin)
-        
-        self.linear_vel = 0
-        self.angular_vel = 0
+        # self.pwm_msg = Float32MultiArray()
+        self.rate = rospy.Rate(0.5)  # Publish rate (Hz)
+        self.left_pwm = 0
+        self.right_pwm = 0
+        self.condition = threading.Condition()
+        self.done = False
+        self.speed = 0
 
-    def getKey(self):
-        tty.setraw(sys.stdin.fileno())
-        rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
-        if rlist:
-            key = sys.stdin.read(1)
+        if rate != 0.0:
+            self.timeout = 1.0 / rate
         else:
-            key = ''
-        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.settings)
-        return key
+            self.timeout = None
 
-    def vels(self, linear, angular):
-        return "currently:\tlinear vel %s\t angular vel %s" % (linear, angular)
+        self.start()
+    
+    def wait_for_subscribers(self):
+        i = 0
+        while not rospy.is_shutdown() and self.pub.get_num_connections() == 0:
+            if i == 4:
+                print("Waiting for subscriber to connect to {}".format(self.pub.name))
+            rospy.sleep(0.5)
+            i += 1
+            i = i % 5
+        if rospy.is_shutdown():
+            raise Exception("Got shutdown request before subscribers connected")
+        
+    def update(self, left_pwm, right_pwm, linear_speed, angular_speed, key):
+        self.condition.acquire()
+        self.left_pwm=left_pwm
+        self.right_pwm=right_pwm
+        if key == 'i' or key == ',':
+            self.speed = linear_speed
+        elif key == 'j' or key == 'l':
+            self.speed= angular_speed
+        
+        # Notify publish thread that we have a new message.
+        self.condition.notify()
+        self.condition.release()
 
-    def constrain(self, input, low, high):
-        if input < low:
-            input = low
-        elif input > high:
-            input = high
-        return input
-
-    def publish_cmd(self, left_val, right_val):
-        """Xuất bản tín hiệu điều khiển dạng Float32MultiArray"""
-        msg = Float32MultiArray()
-        msg.data = [left_val, right_val]
-        self.pub.publish(msg)
+    def stop(self):
+        self.done = True
+        self.update(0,0,0,0,'')
+        self.join()
 
     def run(self):
-        try:
-            print(MSG)
-            print(self.vels(self.linear_vel, self.angular_vel))
+        pwm_msg = Float32MultiArray()
+        while not self.done:
+            self.condition.acquire()
+            # Wait for a new message or timeout.
+            self.condition.wait(self.timeout)
 
-            while not rospy.is_shutdown():
-                key = self.getKey()
-                
-                # Xử lý phím bấm
-                if key == 'w':
-                    self.linear_vel += LIN_VEL_STEP_SIZE
-                    self.linear_vel = self.constrain(self.linear_vel, -MAX_LINEAR, MAX_LINEAR)
-                    print(self.vels(self.linear_vel, self.angular_vel))
-                elif key == 'x':
-                    self.linear_vel -= LIN_VEL_STEP_SIZE
-                    self.linear_vel = self.constrain(self.linear_vel, -MAX_LINEAR, MAX_LINEAR)
-                    print(self.vels(self.linear_vel, self.angular_vel))
-                elif key == 'a':
-                    self.angular_vel += ANG_VEL_STEP_SIZE
-                    self.angular_vel = self.constrain(self.angular_vel, -MAX_ANGULAR, MAX_ANGULAR)
-                    print(self.vels(self.linear_vel, self.angular_vel))
-                elif key == 'd':
-                    self.angular_vel -= ANG_VEL_STEP_SIZE
-                    self.angular_vel = self.constrain(self.angular_vel, -MAX_ANGULAR, MAX_ANGULAR)
-                    print(self.vels(self.linear_vel, self.angular_vel))
-                elif key == 's':
-                    self.linear_vel = 0
-                    self.angular_vel = 0
-                    print(self.vels(self.linear_vel, self.angular_vel))
-                elif key == 'q':
-                    # Cua trái
-                    left = self.linear_vel - self.angular_vel
-                    right = self.linear_vel + self.angular_vel
-                    self.publish_cmd(left, right)
-                    continue
-                elif key == 'e':
-                    # Cua phải
-                    left = self.linear_vel + self.angular_vel
-                    right = self.linear_vel - self.angular_vel
-                    self.publish_cmd(left, right)
-                    continue
-                elif key == 'z':
-                    # Xoay trái
-                    left = -self.linear_vel
-                    right = self.linear_vel
-                    self.publish_cmd(left, right)
-                    continue
-                elif key == 'c':
-                    # Xoay phải
-                    left = self.linear_vel
-                    right = -self.linear_vel
-                    self.publish_cmd(left, right)
-                    continue
-                elif key == '\x03':  # CTRL+C
-                    break
-                
-                # Tính toán giá trị cho bánh trái và phải
-                left = self.linear_vel - self.angular_vel
-                right = self.linear_vel + self.angular_vel
-                
-                # Xuất bản giá trị cho robot
-                self.publish_cmd(left, right)
+            # Copy state into twist message.
+            self.left_pwm=left_pwm*self.speed
+            self.right_pwm=right_pwm*self.speed
+            print(vels(self.left_pwm,self.right_pwm))
+            self.condition.release()
+            pwm_msg.data=[self.left_pwm,self.right_pwm]
+            # Publish.
+            self.pub.publish(pwm_msg)
 
-        except Exception as e:
-            print(e)
-
-        finally:
-            # Dừng robot khi kết thúc
-            stop_msg = Float32MultiArray()
-            stop_msg.data = [0, 0]
-            self.pub.publish(stop_msg)
-            
-            # Khôi phục thiết lập terminal
-            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.settings)
+        # Publish stop message when thread exits.
+        pwm_msg.data=[0.0,0.0]
+        self.pub.publish(pwm_msg)
+    
+def getKey(key_timeout):
+    tty.setraw(sys.stdin.fileno())
+    rlist, _, _ = select.select([sys.stdin], [], [], key_timeout)
+    if rlist:
+        key = sys.stdin.read(1)
+    else:
+        key = ''
+    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
+    return key
 
 
+def vels(left,right):
+    return "currently:\tspeed %s\tturn %s " % (left,right)
+
+   
 if __name__ == '__main__':
-    teleop = CustomTeleop()
-    teleop.run()
+    settings = termios.tcgetattr(sys.stdin)
+
+    rospy.init_node('teleop_keyboard')
+
+    linear_speed = rospy.get_param("~linear_speed", LINEAR_SPEED_PWM)
+    angular_speed = rospy.get_param("~angular_speed", ANGULAR_SPEED_PWM)
+    repeat = rospy.get_param("~repeat_rate", 0.0)
+    key_timeout = rospy.get_param("~key_timeout", 0.0)
+    if key_timeout == 0.0:
+        key_timeout = None
+
+    pub_thread = TeleopKey(repeat)
+
+    left_pwm = 0
+    right_pwm = 0
+    status = 0
+
+    try:
+        pub_thread.wait_for_subscribers()
+        key = ''
+        pub_thread.update(left_pwm,right_pwm,linear_speed, angular_speed, key)
+
+        print(MSG)
+        
+        while(1):
+            key = getKey(key_timeout)
+            if key in moveBindings.keys():
+                left_pwm = moveBindings[key][0]
+                right_pwm = moveBindings[key][1]
+            
+            else:
+                # Skip updating cmd_vel if key timeout and robot already
+                # stopped.
+                if key == '' and left_pwm == 0 and right_pwm == 0:
+                    continue
+                left_pwm=0
+                right_pwm=0
+                if (key == '\x03'):
+                    break
+            
+            pub_thread.update(left_pwm, right_pwm, linear_speed, angular_speed, key)
+
+    except Exception as e:
+        print(e)
+
+    finally:
+        pub_thread.stop()
+
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)

@@ -27,9 +27,14 @@ def main():
     parser.add_argument('--duration', type=int, default=60,
                       help='Thời gian ghi dữ liệu (giây)')
     parser.add_argument('--name', type=str, default=None,
-                      help='Tên cho file bag (mặc định: method_timestamp)')
+                      help='Tên cho file bag (mặc định: slam_data_method_timestamp)')
     parser.add_argument('--output', type=str, default=None,
                       help='Thư mục lưu file bag (mặc định: ~/catkin_ws/src/custom_robot/evaluation/bags/)')
+    parser.add_argument('--environment', type=str, default='real', choices=['sim', 'real'],
+                      help='Môi trường: mô phỏng (sim) hoặc robot thật (real)')
+    parser.add_argument('--gt_source', type=str, default='odom', 
+                      choices=['odom', 'mocap', 'vicon', 'rtabmap', 'manual'],
+                      help='Nguồn ground truth cho robot thật (mặc định: odom)')
     args = parser.parse_args()
 
     if args.method not in ['gmapping', 'hector']:
@@ -38,7 +43,8 @@ def main():
 
     # Tạo tên file dựa trên thời gian
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    bag_name = args.name if args.name else f"{args.method}_{timestamp}"
+    env_prefix = "sim" if args.environment == "sim" else "real"
+    bag_name = args.name if args.name else f"slam_data_{args.method}_{env_prefix}_{timestamp}"
     
     # Xác định thư mục lưu trữ
     if args.output:
@@ -70,26 +76,44 @@ def main():
     bag_path = os.path.join(bag_dir, f"{bag_name}.bag")
 
     print(f"Bắt đầu ghi dữ liệu với phương pháp {args.method} trong {args.duration} giây")
+    print(f"Môi trường: {args.environment}")
+    if args.environment == 'real':
+        print(f"Ground truth source: {args.gt_source}")
     print(f"Dữ liệu sẽ được lưu tại: {bag_path}")
 
-    # Các topic cần ghi lại
+    # Các topic cơ bản cần ghi lại
     topics = [
-        "/scan",                     # Dữ liệu LiDAR
-        "/tf",                       # Transform frames
-        "/map",                      # Bản đồ được tạo ra
-        "/odom",                     # Odometry từ robot
-        "/odom_converted",           # Odometry đã chuyển đổi (nếu có)
-        #"/gazebo/model_states",      # Ground truth từ mô phỏng (vị trí thật của robot)
-
-        f"/{args.method}_slam/pose", # Vị trí ước lượng từ thuật toán SLAM
-        "/tf_static"                 # Static transforms
-    ]
-
-    # Loại bỏ topic không tồn tại trong môi trường robot thực
-    if "/gazebo/model_states" in topics:
-        topics.remove("/gazebo/model_states")  # Loại bỏ topic chỉ có trong mô phỏng
+        "/scan",                           # Dữ liệu LiDAR
+        "/tf",                             # Transform frames
+        "/tf_static",                      # Static transforms
+        "/map",                            # Bản đồ được tạo ra
+        "/odom",                           # Odometry từ robot
+        "/odom_raw",                       # Dữ liệu odometry thô (nếu có)
         
-    topic_arg = " ".join([f"-e '{topic}'" for topic in topics])
+        # Topic của thuật toán SLAM
+        f"/{args.method}_slam/pose",       # Vị trí ước lượng từ thuật toán SLAM
+        f"/{args.method}_slam/trajectory", # Quỹ đạo từ thuật toán SLAM (nếu có)
+        f"/{args.method}_slam/map"         # Bản đồ từ thuật toán SLAM
+    ]
+    
+    # Thêm topic dựa trên môi trường
+    if args.environment == 'sim':
+        # Topic chỉ có trong mô phỏng
+        topics.append("/gazebo/model_states")  # Ground truth từ mô phỏng (vị trí thật của robot)
+    else:
+        # Topic cho robot thật
+        # Thêm topic dựa trên nguồn ground truth
+        if args.gt_source == 'mocap':
+            topics.extend(['/mocap/pose', '/mocap/tf', '/mocap/odom'])
+        elif args.gt_source == 'vicon':
+            topics.extend(['/vicon/pose', '/vicon/tf', '/vicon/odom'])
+        elif args.gt_source == 'rtabmap':
+            topics.extend(['/rtabmap/odom', '/rtabmap/mapData', '/rtabmap/odomInfo'])
+        elif args.gt_source == 'manual':
+            topics.extend(['/amcl_pose', '/robot_pose_ekf/odom'])
+    
+    # Xây dựng chuỗi topic cho rosbag record
+    topic_arg = " ".join([f"\"{topic}\"" for topic in topics])
     
     try:
         # Bắt đầu ghi rosbag
@@ -105,6 +129,13 @@ def main():
         rosbag_process.send_signal(subprocess.signal.SIGINT)
         rosbag_process.wait()
         print(f"Đã ghi xong dữ liệu tại: {bag_path}")
+        
+        # Hiển thị lệnh để thực hiện đánh giá
+        print("\nĐể đánh giá SLAM, hãy chạy lệnh:")
+        if args.environment == 'sim':
+            print(f"python3 ~/catkin_ws/src/custom_robot/scripts/evaluate_slam.py --bag {bag_path} --method {args.method}")
+        else:
+            print(f"python3 ~/catkin_ws/src/custom_robot/scripts/evaluate_real_slam.py --bag {bag_path} --method {args.method} --gt_source {args.gt_source}")
         
     except KeyboardInterrupt:
         print("\nĐã dừng ghi dữ liệu")
