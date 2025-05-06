@@ -576,6 +576,25 @@ class RealRobotSLAMEvaluator:
         """
         Tạo biểu đồ so sánh giữa gmapping và hector
         """
+        # Kiểm tra xem tất cả số liệu có bằng 0 không
+        all_zeros = (gmapping_ate['rmse'] == 0 and hector_ate['rmse'] == 0 and 
+                     gmapping_rpe['rmse'] == 0 and hector_rpe['rmse'] == 0)
+                     
+        # Nếu tất cả bằng 0, đặt giá trị nhỏ để hiển thị trên biểu đồ
+        if all_zeros:
+            print("Cảnh báo: Tất cả các giá trị đo lường bằng 0. Có thể do hai file quỹ đạo giống hệt nhau.")
+            # Đặt giá trị nhỏ khác 0 để biểu đồ hiển thị được
+            small_value = 0.0001
+            gmapping_ate['rmse'] = small_value
+            hector_ate['rmse'] = small_value
+            gmapping_rpe['rmse'] = small_value
+            hector_rpe['rmse'] = small_value
+            # Đặt các giá trị hơi khác nhau để có thể phân biệt trên biểu đồ
+            if gmapping_ate['mean'] == 0: gmapping_ate['mean'] = small_value * 0.8
+            if hector_ate['mean'] == 0: hector_ate['mean'] = small_value * 0.9
+            if gmapping_rpe['mean'] == 0: gmapping_rpe['mean'] = small_value * 0.8
+            if hector_rpe['mean'] == 0: hector_rpe['mean'] = small_value * 0.9
+        
         # Tạo biểu đồ cho ATE
         plt.figure(figsize=(12, 6))
         
@@ -591,6 +610,13 @@ class RealRobotSLAMEvaluator:
         plt.bar(x - width/2, rmse_values, width, label='RMSE')
         plt.bar(x + width/2, mean_values, width, label='Mean')
         
+        # Đảm bảo biểu đồ luôn hiển thị từ 0
+        plt.ylim(bottom=0)
+        if all_zeros:
+            plt.ylim(top=small_value*2)
+            plt.text(0.5, small_value*1.5, "Giá trị gần 0 (quỹ đạo giống nhau)", 
+                     horizontalalignment='center', color='red')
+        
         plt.xlabel('SLAM Method')
         plt.ylabel('Error (m)')
         plt.title('Absolute Trajectory Error (ATE)')
@@ -604,6 +630,13 @@ class RealRobotSLAMEvaluator:
         
         plt.bar(x - width/2, rmse_values, width, label='RMSE')
         plt.bar(x + width/2, mean_values, width, label='Mean')
+        
+        # Đảm bảo biểu đồ luôn hiển thị từ 0
+        plt.ylim(bottom=0)
+        if all_zeros:
+            plt.ylim(top=small_value*2)
+            plt.text(0.5, small_value*1.5, "Giá trị gần 0 (quỹ đạo giống nhau)", 
+                     horizontalalignment='center', color='red')
         
         plt.xlabel('SLAM Method')
         plt.ylabel('Error (m/m)')
@@ -619,6 +652,13 @@ class RealRobotSLAMEvaluator:
         plt.savefig(os.path.join(self.output_dir, "slam_comparison.png"))
         
         print(f"Đã lưu biểu đồ so sánh vào {comparison_plot}")
+        
+        # Nếu tất cả giá trị bằng 0, hiển thị thông báo rõ ràng
+        if all_zeros:
+            print("\n⚠️ CẢNH BÁO: Kết quả so sánh cho thấy các quỹ đạo giống hệt nhau!")
+            print("Kiểm tra lại file ground truth và SLAM trajectory để đảm bảo bạn không sử dụng cùng một file.")
+            print("Nếu bạn đang sử dụng odometry làm ground truth cho Hector, hãy kiểm tra xem dữ liệu odometry và kết quả SLAM có bị trùng lặp không.")
+            print("Biểu đồ đã được tạo với giá trị nhỏ để hiển thị, nhưng kết quả thực tế là các lỗi bằng 0 hoặc gần bằng 0.")
 
 def main():
     parser = argparse.ArgumentParser(description='Đánh giá độ chính xác của thuật toán SLAM trên robot thật')
