@@ -14,7 +14,7 @@ else:
     import termios
 
 LINEAR_SPEED_PWM = 120
-ANGULAR_SPEED_PWM = 60
+ANGULAR_SPEED_PWM = 80
 
 MSG = """
 Control Your Robot!
