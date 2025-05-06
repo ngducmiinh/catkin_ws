@@ -24,7 +24,7 @@ def main():
     parser = argparse.ArgumentParser(description='Ghi dữ liệu SLAM để đánh giá')
     parser.add_argument('--method', type=str, default='gmapping',
                       help='Phương pháp SLAM (gmapping hoặc hector)')
-    parser.add_argument('--duration', type=int, default=60,
+    parser.add_argument('--duration', type=int, default=100,
                       help='Thời gian ghi dữ liệu (giây)')
     parser.add_argument('--name', type=str, default=None,
                       help='Tên cho file bag (mặc định: slam_data_method_timestamp)')
