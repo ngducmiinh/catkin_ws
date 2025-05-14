@@ -1,4 +1,3 @@
-
 import rospy
 import sys
 import select
@@ -6,6 +5,9 @@ import os
 from std_msgs.msg import Float32MultiArray
 import threading
 import sys, select, termios, tty
+import random
+import time
+import argparse
 
 if os.name == 'nt':
     import msvcrt
@@ -123,14 +125,104 @@ def getKey(key_timeout):
 def vels(left,right):
     return "currently:\tspeed %s\tturn %s " % (left,right)
 
+def random_movement(duration, linear_speed, angular_speed):
+    """
+    Di chuyển robot ngẫu nhiên trong khoảng thời gian nhất định
+    :param duration: Thời gian di chuyển (giây)
+    :param linear_speed: Tốc độ tiến
+    :param angular_speed: Tốc độ quay
+    """
+    rospy.init_node('teleop_random', anonymous=True)
+    pub = rospy.Publisher('robot_control', Float32MultiArray, queue_size=10)
+    
+    # Đợi cho subscriber kết nối
+    rospy.sleep(1.0)
+    
+    # Thời gian bắt đầu
+    start_time = time.time()
+    print(f"Bắt đầu di chuyển ngẫu nhiên trong {duration} giây...")
+    
+    # Các lựa chọn di chuyển
+    moves = ['i', 'j', 'l', ',', 'k']
+    weights = [0.4, 0.2, 0.2, 0.1, 0.1]  # Tỷ lệ xuất hiện của các lệnh di chuyển
+    
+    # Thời gian chạy cho mỗi lệnh
+    cmd_duration_min = 0.5  # Thời gian tối thiểu cho mỗi lệnh (giây)
+    cmd_duration_max = 2.0  # Thời gian tối đa cho mỗi lệnh (giây)
+    
+    pwm_msg = Float32MultiArray()
+    
+    try:
+        while (time.time() - start_time) < duration and not rospy.is_shutdown():
+            # Chọn lệnh di chuyển ngẫu nhiên
+            move = random.choices(moves, weights=weights)[0]
+            
+            # Thời gian chạy lệnh hiện tại
+            current_cmd_duration = random.uniform(cmd_duration_min, cmd_duration_max)
+            
+            # Tính toán PWM cho lệnh
+            if move in moveBindings:
+                left_pwm = moveBindings[move][0]
+                right_pwm = moveBindings[move][1]
+                
+                # Áp dụng tốc độ
+                if move == 'i' or move == ',':
+                    speed = linear_speed
+                elif move == 'j' or move == 'l':
+                    speed = angular_speed
+                else:
+                    speed = 0
+                
+                # Tính toán giá trị PWM cuối cùng
+                final_left_pwm = left_pwm * speed
+                final_right_pwm = right_pwm * speed
+                
+                # Gửi lệnh di chuyển
+                pwm_msg.data = [final_left_pwm, final_right_pwm]
+                pub.publish(pwm_msg)
+                
+                print(f"Di chuyển: {move}, PWM trái: {final_left_pwm}, PWM phải: {final_right_pwm}, Thời gian: {current_cmd_duration}s")
+                
+                # Đợi trong khoảng thời gian của lệnh hiện tại
+                time.sleep(current_cmd_duration)
+            
+            # Kiểm tra xem đã hết thời gian tổng cộng chưa
+            if (time.time() - start_time) >= duration:
+                break
+        
+    except Exception as e:
+        print(f"Lỗi khi di chuyển ngẫu nhiên: {e}")
+    finally:
+        # Dừng robot
+        pwm_msg.data = [0.0, 0.0]
+        pub.publish(pwm_msg)
+        print("Đã hoàn thành di chuyển ngẫu nhiên.")
    
 if __name__ == '__main__':
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Teleop for robot control')
+    parser.add_argument('--random', action='store_true', help='Enable random movement')
+    parser.add_argument('--duration', type=int, default=60, help='Duration of random movement in seconds')
+    parser.add_argument('--linear_speed', type=float, default=LINEAR_SPEED_PWM, help='Linear speed PWM value')
+    parser.add_argument('--angular_speed', type=float, default=ANGULAR_SPEED_PWM, help='Angular speed PWM value')
+    
+    args, unknown = parser.parse_known_args()
+    
+    # Nếu chọn chế độ di chuyển ngẫu nhiên
+    if args.random:
+        try:
+            random_movement(args.duration, args.linear_speed, args.angular_speed)
+        except rospy.ROSInterruptException:
+            pass
+        sys.exit(0)
+    
+    # Chế độ điều khiển bằng bàn phím
     settings = termios.tcgetattr(sys.stdin)
 
     rospy.init_node('teleop_keyboard')
 
-    linear_speed = rospy.get_param("~linear_speed", LINEAR_SPEED_PWM)
-    angular_speed = rospy.get_param("~angular_speed", ANGULAR_SPEED_PWM)
+    linear_speed = rospy.get_param("~linear_speed", args.linear_speed)
+    angular_speed = rospy.get_param("~angular_speed", args.angular_speed)
     repeat = rospy.get_param("~repeat_rate", 0.0)
     key_timeout = rospy.get_param("~key_timeout", 0.0)
     if key_timeout == 0.0:

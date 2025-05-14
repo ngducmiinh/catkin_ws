@@ -4,7 +4,7 @@
   <arg name="arduino_baud" default="57600" />
   <arg name="lidar_port" default="/dev/ttyUSB0" />
   <arg name="slam_methods" default="gmapping" doc="slam type [gmapping, hector]"/>
-  <arg name="use_rviz" default="false" doc="set to true to enable RViz"/>
+  <arg name="use_rviz" default="true" doc="set to true to enable RViz"/>
   
   <!-- Start the actual robot hardware -->
   <include file="$(find custom_robot)/launch/robot_bringup.launch">
